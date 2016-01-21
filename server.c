@@ -3,6 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <netdb.h>
+#include <ctype.h>
 #include "slist.h"
 
 #define DEBUG 1
@@ -33,11 +34,22 @@
 /****************************/
 int sPort = -1;
 
+typedef struct client_info {
+
+        char* message;
+        struct sockaddr_in* cli;
+
+}client_info_t;
+
 /*******************************/
 /***** Method Declarations *****/
 /*******************************/
+//Input Validation
 int verifyPort(char*);
 void initServerSocket(int*);
+
+//Handle Message
+char* messageToUpper(char*);
 
 
 /******************************************************************************/
@@ -53,25 +65,41 @@ int main(int argc, char* argv[]) {
                 exit(EXIT_FAILURE);
         }
 
+        //TODO add frees at every program exit points;
 
         int sd = 0;
         initServerSocket(&sd);
 
-        char message[SIZE_MESSAGE + 1];
-        memset(message, 0, sizeof(message));
+        slist_t* queue = (slist_t*)calloc(1, sizeof(slist_t));
+        if(!queue) {
+                perror("calloc");
+                exit(EXIT_FAILURE);
+        }
+
+        // char message[SIZE_MESSAGE + 1];
+        // memset(message, 0, sizeof(message));
 
         fd_set readset;
         fd_set writeset;
-        struct sockaddr_in cli;
-        int cli_len = sizeof(cli);
-        int nBytes = 0;
-
         FD_ZERO(&readset);
         FD_ZERO(&writeset);
 
         while(1) {
 
-                //any I/O operation should never block
+                struct sockaddr_in cli;
+                socklen_t cli_len = sizeof(cli);
+                int nBytes = 0;
+
+                client_info_t* client_info = (client_info_t*)calloc(1, sizeof(client_info_t));
+                if(!client_info) {
+                        perror("calloc");
+                        exit(EXIT_FAILURE);
+                }
+                char* message = (char*)calloc(SIZE_MESSAGE, sizeof(char));
+                if(!message) {
+                        perror("calloc");
+                        exit(EXIT_FAILURE);
+                }
 
                 FD_SET(sd, &readset);
                 FD_SET(sd, &writeset);
@@ -80,7 +108,22 @@ int main(int argc, char* argv[]) {
                 if(FD_ISSET(sd, &readset)) {
                         printf(READY_READ);
                         nBytes = recvfrom(sd, message, SIZE_MESSAGE, 0, (struct sockaddr*) &cli, &cli_len);
+
+                        if(nBytes < 0) {
+                                perror("recvfrom");
+                                exit(EXIT_FAILURE);
+                        }
+
+                        // message = messageToUpper(message);
+                        messageToUpper(message);
+                        client_info->message = message;
+                        client_info->cli = &cli;
+                        printf("message UPPER = %s\n", message);
+                        printf("cli mem addr = %p\n", &cli);
+                        slist_append(queue, client_info);
                 }
+
+                //any I/O operation should never block
 
                 //maintain a queue to save read messages and the source information
                 //Only when the queue in not empty you should check if the socket is ready to write
@@ -134,4 +177,21 @@ void initServerSocket(int* sockfd) {
                 exit(EXIT_FAILURE);
         }
 
+}
+
+/******************************************************************************/
+/******************************************************************************/
+/*************************** Message Methods **********************************/
+/******************************************************************************/
+/******************************************************************************/
+
+char* messageToUpper(char* message) {
+
+        int length = strlen(message);
+        int i;
+
+        for(i = 0; i < length; i++)
+                message[i] = toupper(message[i]);
+
+        return message;
 }
