@@ -37,6 +37,7 @@
 /****************************/
 int sPort = -1;
 
+//struct to hold client info & message
 typedef struct client_info {
 
         char* message;
@@ -54,7 +55,11 @@ void initServerSocket(int*);
 
 //Handle Message
 char* messageToUpper(char*);
+void readMessage(slist_t*, int);
+void writeMessage(slist_t*, int);
 
+//Misc
+void freeMemory(slist_t*);
 
 /******************************************************************************/
 /******************************************************************************/
@@ -68,8 +73,6 @@ int main(int argc, char* argv[]) {
                 printf(ERROR_USAGE);
                 exit(EXIT_FAILURE);
         }
-
-        //TODO add frees at every program exit points;
 
         int sd = 0;
         initServerSocket(&sd);
@@ -88,79 +91,15 @@ int main(int argc, char* argv[]) {
 
         while(1) {
 
-                int nBytes = 0;
-                socklen_t cli_len;
-
                 FD_SET(sd, &readset);
                 FD_SET(sd, &writeset);
 
                 select(sd + 1, &readset, &writeset, 0, 0);
-                if(FD_ISSET(sd, &readset)) {
-                        printf(READY_READ);
-                        debug_print("%s\n", "READING");
+                if(FD_ISSET(sd, &readset))
+                        readMessage(queue, sd);
 
-                        struct sockaddr_in* cli = (struct sockaddr_in*)calloc(1, sizeof(struct sockaddr_in));
-                        if(!cli) {
-                                perror("calloc");
-                                exit(EXIT_FAILURE);
-                        }
-                        cli_len = sizeof(cli);
-
-                        char* message = (char*)calloc(SIZE_MESSAGE, sizeof(char));
-                        if(!message) {
-                                perror("calloc");
-                                exit(EXIT_FAILURE);
-                        }
-
-                        nBytes = recvfrom(sd, message, SIZE_MESSAGE, 0, (struct sockaddr*) cli, &cli_len);
-
-                        if(nBytes < 0) {
-                                perror("recvfrom");
-                                exit(EXIT_FAILURE);
-                        }
-
-                        client_info_t* client_info = (client_info_t*)calloc(1, sizeof(client_info_t));
-                        if(!client_info) {
-                                perror("calloc");
-                                exit(EXIT_FAILURE);
-                        }
-
-
-                        // message = messageToUpper(message);
-                        messageToUpper(message);
-                        client_info->message = message;
-                        client_info->cli = cli;
-                        client_info->cli_len = cli_len;
-                        debug_print("\tmessage UPPER = %s\n", message);
-                        debug_print("\tcli mem addr = %p\n", cli);
-                        debug_print("\tcli addr = %s\n", inet_ntoa(cli->sin_addr));
-                        slist_append(queue, client_info);
-                }
-                if(slist_size(queue)) {
-
-                        if(FD_ISSET(sd, &writeset)) {
-                                printf(READY_WRITE);
-                                debug_print("%s\n", "WRITING");
-
-                                client_info_t* client_info = slist_pop_first(queue);
-
-                                char* message = client_info->message;
-                                struct sockaddr_in* cli =  client_info->cli;
-                                socklen_t length = client_info->cli_len;
-
-                                cli_len = sizeof(cli);
-
-                                debug_print("\tmessage  = %s\n", message);
-                                debug_print("\tcli mem addr = %p\n", cli);
-                                debug_print("\tcli addr = %s\n", inet_ntoa(cli->sin_addr));
-
-                                nBytes = sendto(sd, message, sizeof(message), 0, (struct sockaddr*) cli, length);
-                                if(nBytes < 0) {
-                                        perror("sendto");
-                                        exit(EXIT_FAILURE);
-                                }
-                        }
-                }
+                if(slist_size(queue) && FD_ISSET(sd, &writeset))
+                        writeMessage(queue, sd);
 
                 //any I/O operation should never block
 
@@ -233,4 +172,127 @@ char* messageToUpper(char* message) {
                 message[i] = toupper(message[i]);
 
         return message;
+}
+
+/*********************************/
+/*********************************/
+/*********************************/
+
+void readMessage(slist_t* queue, int sd) {
+
+        printf(READY_READ);
+        debug_print("%s\n", "READING");
+
+        struct sockaddr_in* cli = (struct sockaddr_in*)calloc(1, sizeof(struct sockaddr_in));
+        if(!cli) {
+                perror("calloc");
+                freeMemory(queue);
+                exit(EXIT_FAILURE);
+        }
+        socklen_t cli_len = sizeof(cli);
+
+        char* message = (char*)calloc(SIZE_MESSAGE, sizeof(char));
+        if(!message) {
+                perror("calloc");
+                free(cli);
+                freeMemory(queue);
+                exit(EXIT_FAILURE);
+        }
+
+        int nBytes = recvfrom(sd, message, SIZE_MESSAGE, 0, (struct sockaddr*) cli, &cli_len);
+
+        if(nBytes < 0) {
+                perror("recvfrom");
+                free(cli);
+                free(message);
+                freeMemory(queue);
+                exit(EXIT_FAILURE);
+        }
+
+        //FIXME - manually quit server. - REMOVE
+        if(!strncmp(message, "quit", 4)) {
+                printf("Quitting...\n");
+                sendto(sd, "\n", strlen("\n"), 0, (struct sockaddr*) cli, cli_len);
+                free(cli);
+                free(message);
+                freeMemory(queue);
+                exit(EXIT_SUCCESS);
+        }
+
+        client_info_t* client_info = (client_info_t*)calloc(1, sizeof(client_info_t));
+        if(!client_info) {
+                perror("calloc");
+                free(cli);
+                free(message);
+                freeMemory(queue);
+                exit(EXIT_FAILURE);
+        }
+
+
+        messageToUpper(message);
+        client_info->message = message;
+        client_info->cli = cli;
+        client_info->cli_len = cli_len;
+        debug_print("\tmessage UPPER = %s\n\tcli mem addr = %p\n\tcli addr = %s\n",
+                message,
+                cli,
+                inet_ntoa(cli->sin_addr));
+        slist_append(queue, client_info);
+}
+
+/*********************************/
+/*********************************/
+/*********************************/
+
+void writeMessage(slist_t* queue, int sd) {
+
+        printf(READY_WRITE);
+        debug_print("%s\n", "WRITING");
+
+        client_info_t* client_info = slist_pop_first(queue);
+
+        char* message = client_info->message;
+        struct sockaddr_in* cli =  client_info->cli;
+        socklen_t length = client_info->cli_len;
+
+        debug_print("\tmessage  = %s\n\tcli mem addr = %p\n\tcli addr = %s\n",
+                message,
+                cli,
+                inet_ntoa(cli->sin_addr));
+
+        int nBytes = sendto(sd, message, strlen(message), 0, (struct sockaddr*) cli, length);
+        if(nBytes < 0) {
+                perror("sendto");
+                free(message);
+                free(cli);
+                free(client_info);
+                freeMemory(queue);
+                exit(EXIT_FAILURE);
+        }
+
+        free(message);
+        free(cli);
+        free(client_info);
+}
+
+/******************************************************************************/
+/*************************** Misc Methods *************************************/
+/******************************************************************************/
+
+void freeMemory(slist_t* queue) {
+
+        slist_node_t* p, *q;
+
+        for(p = slist_head(queue); p != NULL; p = q) {
+
+                q = slist_next(p);
+
+                client_info_t* client_info = slist_data(p);
+                free(client_info->message);
+                free(client_info->cli);
+                free(client_info);
+                free(p);
+        }
+
+        free(queue);
 }
