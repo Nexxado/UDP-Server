@@ -4,6 +4,9 @@
 #include <unistd.h>
 #include <netdb.h>
 #include <ctype.h>
+
+#include <arpa/inet.h> //TODO debug - inet_ntoa()
+
 #include "slist.h"
 
 #define DEBUG 1
@@ -38,6 +41,7 @@ typedef struct client_info {
 
         char* message;
         struct sockaddr_in* cli;
+        socklen_t cli_len;
 
 }client_info_t;
 
@@ -76,8 +80,6 @@ int main(int argc, char* argv[]) {
                 exit(EXIT_FAILURE);
         }
 
-        // char message[SIZE_MESSAGE + 1];
-        // memset(message, 0, sizeof(message));
 
         fd_set readset;
         fd_set writeset;
@@ -86,20 +88,8 @@ int main(int argc, char* argv[]) {
 
         while(1) {
 
-                struct sockaddr_in cli;
-                socklen_t cli_len = sizeof(cli);
                 int nBytes = 0;
-
-                client_info_t* client_info = (client_info_t*)calloc(1, sizeof(client_info_t));
-                if(!client_info) {
-                        perror("calloc");
-                        exit(EXIT_FAILURE);
-                }
-                char* message = (char*)calloc(SIZE_MESSAGE, sizeof(char));
-                if(!message) {
-                        perror("calloc");
-                        exit(EXIT_FAILURE);
-                }
+                socklen_t cli_len;
 
                 FD_SET(sd, &readset);
                 FD_SET(sd, &writeset);
@@ -107,20 +97,69 @@ int main(int argc, char* argv[]) {
                 select(sd + 1, &readset, &writeset, 0, 0);
                 if(FD_ISSET(sd, &readset)) {
                         printf(READY_READ);
-                        nBytes = recvfrom(sd, message, SIZE_MESSAGE, 0, (struct sockaddr*) &cli, &cli_len);
+                        debug_print("%s\n", "READING");
+
+                        struct sockaddr_in* cli = (struct sockaddr_in*)calloc(1, sizeof(struct sockaddr_in));
+                        if(!cli) {
+                                perror("calloc");
+                                exit(EXIT_FAILURE);
+                        }
+                        cli_len = sizeof(cli);
+
+                        char* message = (char*)calloc(SIZE_MESSAGE, sizeof(char));
+                        if(!message) {
+                                perror("calloc");
+                                exit(EXIT_FAILURE);
+                        }
+
+                        nBytes = recvfrom(sd, message, SIZE_MESSAGE, 0, (struct sockaddr*) cli, &cli_len);
 
                         if(nBytes < 0) {
                                 perror("recvfrom");
                                 exit(EXIT_FAILURE);
                         }
 
+                        client_info_t* client_info = (client_info_t*)calloc(1, sizeof(client_info_t));
+                        if(!client_info) {
+                                perror("calloc");
+                                exit(EXIT_FAILURE);
+                        }
+
+
                         // message = messageToUpper(message);
                         messageToUpper(message);
                         client_info->message = message;
-                        client_info->cli = &cli;
-                        printf("message UPPER = %s\n", message);
-                        printf("cli mem addr = %p\n", &cli);
+                        client_info->cli = cli;
+                        client_info->cli_len = cli_len;
+                        debug_print("\tmessage UPPER = %s\n", message);
+                        debug_print("\tcli mem addr = %p\n", cli);
+                        debug_print("\tcli addr = %s\n", inet_ntoa(cli->sin_addr));
                         slist_append(queue, client_info);
+                }
+                if(slist_size(queue)) {
+
+                        if(FD_ISSET(sd, &writeset)) {
+                                printf(READY_WRITE);
+                                debug_print("%s\n", "WRITING");
+
+                                client_info_t* client_info = slist_pop_first(queue);
+
+                                char* message = client_info->message;
+                                struct sockaddr_in* cli =  client_info->cli;
+                                socklen_t length = client_info->cli_len;
+
+                                cli_len = sizeof(cli);
+
+                                debug_print("\tmessage  = %s\n", message);
+                                debug_print("\tcli mem addr = %p\n", cli);
+                                debug_print("\tcli addr = %s\n", inet_ntoa(cli->sin_addr));
+
+                                nBytes = sendto(sd, message, sizeof(message), 0, (struct sockaddr*) cli, length);
+                                if(nBytes < 0) {
+                                        perror("sendto");
+                                        exit(EXIT_FAILURE);
+                                }
+                        }
                 }
 
                 //any I/O operation should never block
