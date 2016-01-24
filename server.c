@@ -90,22 +90,23 @@ int main(int argc, char* argv[]) {
         FD_ZERO(&writeset);
 
         while(1) {
-
+                debug_print("%s\n", "loop");
                 FD_SET(sd, &readset);
                 FD_SET(sd, &writeset);
 
-                select(sd + 1, &readset, &writeset, 0, 0);
+                if(!slist_size(queue)) {
+                        printf(READY_READ);
+                        select(sd + 1, &readset, 0, 0, 0);
+                }
+
+
                 if(FD_ISSET(sd, &readset))
                         readMessage(queue, sd);
 
+                select(sd + 1, &readset, &writeset, 0, 0);
                 if(slist_size(queue) && FD_ISSET(sd, &writeset))
                         writeMessage(queue, sd);
 
-                //any I/O operation should never block
-
-                //maintain a queue to save read messages and the source information
-                //Only when the queue in not empty you should check if the socket is ready to write
-                //You always check if the socket is ready for reading operation
         }
 
         close(sd);
@@ -180,7 +181,6 @@ char* messageToUpper(char* message) {
 
 void readMessage(slist_t* queue, int sd) {
 
-        printf(READY_READ);
         debug_print("%s\n", "READING");
 
         struct sockaddr_in* cli = (struct sockaddr_in*)calloc(1, sizeof(struct sockaddr_in));
