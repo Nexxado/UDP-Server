@@ -5,11 +5,9 @@
 #include <netdb.h>
 #include <ctype.h>
 #include<signal.h>
-#include <arpa/inet.h> //TODO debug - inet_ntoa()
-
 #include "slist.h"
 
-#define DEBUG 1
+#define DEBUG 0
 #define debug_print(fmt, ...) \
         do { if (DEBUG) fprintf(stderr, fmt, __VA_ARGS__); } while (0)
 
@@ -241,10 +239,9 @@ void readMessage(slist_t* queue, int sd) {
         client_info->message = message;
         client_info->cli = cli;
         client_info->cli_len = cli_len;
-        debug_print("\tmessage UPPER = %s\n\tcli mem addr = %p\n\tcli addr = %s\n",
+        debug_print("\tmessage UPPER = %s\n\tcli mem addr = %p\n",
                     message,
-                    cli,
-                    inet_ntoa(cli->sin_addr));
+                    cli);
         slist_append(queue, client_info);
 }
 
@@ -262,10 +259,9 @@ void writeMessage(slist_t* queue, int sd) {
         struct sockaddr_in* cli =  client_info->cli;
         socklen_t length = client_info->cli_len;
 
-        debug_print("\tmessage  = %s\n\tcli mem addr = %p\n\tcli addr = %s\n",
+        debug_print("\tmessage  = %s\n\tcli mem addr = %p\n",
                     message,
-                    cli,
-                    inet_ntoa(cli->sin_addr));
+                    cli);
 
         int nBytes = sendto(sd, message, strlen(message), 0, (struct sockaddr*) cli, length);
         if(nBytes < 0) {
