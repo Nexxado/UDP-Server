@@ -4,7 +4,7 @@
 #include <unistd.h>
 #include <netdb.h>
 #include <ctype.h>
-#include<signal.h>
+#include <signal.h>
 #include "slist.h"
 
 #define DEBUG 0
@@ -74,10 +74,7 @@ int main(int argc, char* argv[]) {
                 exit(EXIT_FAILURE);
         }
 
-        int sd = 0;
-        initServerSocket(&sd);
-
-        // signal(SIGINT, signalHandler);
+        //overload SIGINT signal handler (as program in infinite loop)
         struct sigaction sigac;
         memset(&sigac, 0, sizeof(sigac));
         sigac.sa_handler = &signalHandler;
@@ -86,12 +83,15 @@ int main(int argc, char* argv[]) {
                 exit(EXIT_FAILURE);
         }
 
+        int sd = 0;
+        initServerSocket(&sd);
 
         queue = (slist_t*)calloc(1, sizeof(slist_t));
         if(!queue) {
                 perror("calloc");
                 exit(EXIT_FAILURE);
         }
+        slist_init(queue);
 
 
         fd_set readset;
@@ -207,7 +207,7 @@ void readMessage(slist_t* queue, int sd) {
         }
         socklen_t cli_len = sizeof(cli);
 
-        char* message = (char*)calloc(SIZE_MESSAGE, sizeof(char));
+        char* message = (char*)calloc(SIZE_MESSAGE + 1, sizeof(char));
         if(!message) {
                 perror("calloc");
                 free(cli);
