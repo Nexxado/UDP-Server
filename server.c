@@ -4,12 +4,12 @@
 #include <unistd.h>
 #include <netdb.h>
 #include <ctype.h>
-
+#include<signal.h>
 #include <arpa/inet.h> //TODO debug - inet_ntoa()
 
 #include "slist.h"
 
-#define DEBUG 0
+#define DEBUG 1
 #define debug_print(fmt, ...) \
         do { if (DEBUG) fprintf(stderr, fmt, __VA_ARGS__); } while (0)
 
@@ -36,6 +36,7 @@
 /***** Global Variables *****/
 /****************************/
 int sPort = -1;
+slist_t* queue;
 
 //struct to hold client info & message
 typedef struct client_info {
@@ -59,7 +60,8 @@ void readMessage(slist_t*, int);
 void writeMessage(slist_t*, int);
 
 //Misc
-void freeMemory(slist_t*);
+void freeMemory();
+void signalHandler(int);
 
 /******************************************************************************/
 /******************************************************************************/
@@ -77,7 +79,17 @@ int main(int argc, char* argv[]) {
         int sd = 0;
         initServerSocket(&sd);
 
-        slist_t* queue = (slist_t*)calloc(1, sizeof(slist_t));
+        // signal(SIGINT, signalHandler);
+        struct sigaction sigac;
+        memset(&sigac, 0, sizeof(sigac));
+        sigac.sa_handler = &signalHandler;
+        if(sigaction(SIGINT, &sigac, 0)) {
+                perror("sigaction");
+                exit(EXIT_FAILURE);
+        }
+
+
+        queue = (slist_t*)calloc(1, sizeof(slist_t));
         if(!queue) {
                 perror("calloc");
                 exit(EXIT_FAILURE);
@@ -116,6 +128,8 @@ int main(int argc, char* argv[]) {
         close(sd);
         return 0;
 }
+
+
 
 
 /******************************************************************************/
@@ -190,7 +204,7 @@ void readMessage(slist_t* queue, int sd) {
         struct sockaddr_in* cli = (struct sockaddr_in*)calloc(1, sizeof(struct sockaddr_in));
         if(!cli) {
                 perror("calloc");
-                freeMemory(queue);
+                freeMemory();
                 exit(EXIT_FAILURE);
         }
         socklen_t cli_len = sizeof(cli);
@@ -199,7 +213,7 @@ void readMessage(slist_t* queue, int sd) {
         if(!message) {
                 perror("calloc");
                 free(cli);
-                freeMemory(queue);
+                freeMemory();
                 exit(EXIT_FAILURE);
         }
 
@@ -209,18 +223,8 @@ void readMessage(slist_t* queue, int sd) {
                 perror("recvfrom");
                 free(cli);
                 free(message);
-                freeMemory(queue);
+                freeMemory();
                 exit(EXIT_FAILURE);
-        }
-
-        //FIXME - manually quit server. - REMOVE
-        if(!strncmp(message, "quit", 4)) {
-                printf("Quitting...\n");
-                sendto(sd, "\n", strlen("\n"), 0, (struct sockaddr*) cli, cli_len);
-                free(cli);
-                free(message);
-                freeMemory(queue);
-                exit(EXIT_SUCCESS);
         }
 
         client_info_t* client_info = (client_info_t*)calloc(1, sizeof(client_info_t));
@@ -228,7 +232,7 @@ void readMessage(slist_t* queue, int sd) {
                 perror("calloc");
                 free(cli);
                 free(message);
-                freeMemory(queue);
+                freeMemory();
                 exit(EXIT_FAILURE);
         }
 
@@ -269,7 +273,7 @@ void writeMessage(slist_t* queue, int sd) {
                 free(message);
                 free(cli);
                 free(client_info);
-                freeMemory(queue);
+                freeMemory();
                 exit(EXIT_FAILURE);
         }
 
@@ -282,7 +286,10 @@ void writeMessage(slist_t* queue, int sd) {
 /*************************** Misc Methods *************************************/
 /******************************************************************************/
 
-void freeMemory(slist_t* queue) {
+void freeMemory() {
+
+        if(!queue)
+                return;
 
         slist_node_t* p, *q;
 
@@ -298,4 +305,14 @@ void freeMemory(slist_t* queue) {
         }
 
         free(queue);
+}
+
+/*********************************/
+/*********************************/
+/*********************************/
+
+void signalHandler(int sig_num) {
+        debug_print("%s\n", "Server closing, freeing memory");
+        freeMemory();
+        exit(EXIT_SUCCESS);
 }
