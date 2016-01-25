@@ -9,7 +9,7 @@
 
 #include "slist.h"
 
-#define DEBUG 1
+#define DEBUG 0
 #define debug_print(fmt, ...) \
         do { if (DEBUG) fprintf(stderr, fmt, __VA_ARGS__); } while (0)
 
@@ -92,21 +92,25 @@ int main(int argc, char* argv[]) {
         while(1) {
                 debug_print("%s\n", "loop");
                 FD_SET(sd, &readset);
-                FD_SET(sd, &writeset);
 
-                if(!slist_size(queue)) {
+                if(slist_size(queue))
+                        FD_SET(sd, &writeset);
+                else
+                        FD_ZERO(&writeset);
+
+
+                select(sd + 1, &readset, &writeset, 0, 0);
+
+                if(FD_ISSET(sd, &readset)) {
                         printf(READY_READ);
-                        select(sd + 1, &readset, 0, 0, 0);
+                        readMessage(queue, sd);
                 }
 
 
-                if(FD_ISSET(sd, &readset))
-                        readMessage(queue, sd);
-
-                select(sd + 1, &readset, &writeset, 0, 0);
-                if(slist_size(queue) && FD_ISSET(sd, &writeset))
+                if(slist_size(queue) && FD_ISSET(sd, &writeset)) {
+                        printf(READY_WRITE);
                         writeMessage(queue, sd);
-
+                }
         }
 
         close(sd);
@@ -234,9 +238,9 @@ void readMessage(slist_t* queue, int sd) {
         client_info->cli = cli;
         client_info->cli_len = cli_len;
         debug_print("\tmessage UPPER = %s\n\tcli mem addr = %p\n\tcli addr = %s\n",
-                message,
-                cli,
-                inet_ntoa(cli->sin_addr));
+                    message,
+                    cli,
+                    inet_ntoa(cli->sin_addr));
         slist_append(queue, client_info);
 }
 
@@ -246,7 +250,6 @@ void readMessage(slist_t* queue, int sd) {
 
 void writeMessage(slist_t* queue, int sd) {
 
-        printf(READY_WRITE);
         debug_print("%s\n", "WRITING");
 
         client_info_t* client_info = slist_pop_first(queue);
@@ -256,9 +259,9 @@ void writeMessage(slist_t* queue, int sd) {
         socklen_t length = client_info->cli_len;
 
         debug_print("\tmessage  = %s\n\tcli mem addr = %p\n\tcli addr = %s\n",
-                message,
-                cli,
-                inet_ntoa(cli->sin_addr));
+                    message,
+                    cli,
+                    inet_ntoa(cli->sin_addr));
 
         int nBytes = sendto(sd, message, strlen(message), 0, (struct sockaddr*) cli, length);
         if(nBytes < 0) {
